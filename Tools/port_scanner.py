@@ -1,15 +1,5 @@
 import socket as sc
 
-services = {
-    21: "FTP",
-    22: "SSH",
-    80: "HTTP",
-    135: "MSRPC",
-    139: "NetBIOS",
-    443: "HTTPS",
-    445: "SMB"
-}
-
 
 def scan_port(ip, port):
     try:
@@ -27,10 +17,17 @@ def scan_port(ip, port):
             return False
     except Exception:
         return False
+
+def get_service(port):
+    try:
+        return sc.getservbyport(port)
+    except:
+        return "Unknown"
     
+
 def scan_ports(ip, port):
     for port in ports:
-        service = services.get(port, "Unknown")
+        service = get_service(port)
 
         if scan_port(ip, port):
             print(f"[+] port {port} OPEN ({service})")
@@ -38,8 +35,11 @@ def scan_ports(ip, port):
             print(f"[-] port {port} CLOSED ({service})")
 
 
-target = input("Enter your Target IP adrress: ")
 
-ports = [21, 22 ,80 ,135, 139, 443, 445]
+target = input("Enter your Target IP adrress: ")
+start_port = int(input("Enter Start Port: "))
+end_port = int(input("Enter end port: "))
+
+ports = range(start_port, end_port + 1)
 
 scan_ports(target, ports)
