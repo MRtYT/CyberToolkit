@@ -1,4 +1,4 @@
-from tools.port_scanner import scan_ports
+from tools.scanners.port_scanner import scan_ports
 import os
 import colorama
 
