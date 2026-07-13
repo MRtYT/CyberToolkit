@@ -19,33 +19,40 @@ Banner = r"""
 
 def port_scanner_menu():
 
-    target = input("\nTarget IP: ")
+    target = input("\nTarget IP / Domain: ")
 
     start = int(input("Start port: "))
     end = int(input("End port: "))
 
     ports = range(start, end + 1)
 
-    print("\nscanning...\n")
+    print(colorama.Fore.YELLOW + f"\n[*]Starting scan on target: {target}")
+    print(colorama.Fore.YELLOW + f"[*] Scanning {len(ports)} ports using 50 threads...\n")
+    print(colorama.Fore.CYAN + "=" * 60)
+
+    print(colorama.Fore.CYAN + f"{'PORT':<10}{'STATUS':<10}{"SERVICE":<15}{"BANNER"}")
+    print(colorama.Fore.CYAN + "=" * 60)
+
 
     results = scan_ports(target, ports)
 
+    open_count = 0
+    closed_count = 0
+
     for result in results:
         if result["status"] == "OPEN":
-            print(
-                f"[+] {result['port']} OPEN"
-                f"({result['service']})"
-            )
+            open_count += 1
 
-            if result["banner"]:
-                print(
-                    f"      banner: {result['banner']}"
-                )
+            banner_text = result["banner"] if result["banner"] else "-"
+
+            print(colorama.Fore.GREEN + f"{result['port']:<10}{result['status']:<10}{result['service']:<15}{banner_text}")
+        
         else:
-            print(
-                f"[-] {result['port']} CLOSED"
-                f"({result['service']})"
-            )
+            closed_count += 1
+
+    print(colorama.Fore.CYAN + "=" * 60)
+    print(colorama.Fore.LIGHTBLUE_EX + f"[i] Scan finished. Found {open_count} open ports and {closed_count} closed ports.")
+
 
 
 def pause():

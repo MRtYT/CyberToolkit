@@ -21,6 +21,7 @@ def check_and_grab(ip, port):
 
         sock.connect((ip, port))
 
+        sock.settimeout(3)
         banner = None
 
         #HTTP
@@ -28,6 +29,8 @@ def check_and_grab(ip, port):
             request = (
                 f"GET / HTTP/1.1\r\n"
                 f"Host: {ip}\r\n"
+                "User-Agent: Mozilla/5.0 (CyberToolkit-Scanner)\r\n"
+                "Accept: */*\r\n"
                 "Connection: close\r\n\r\n"
             )
             sock.send(request.encode())
@@ -40,13 +43,15 @@ def check_and_grab(ip, port):
         try:
 
             ready_data = sock.recv(4096)
-            response = banner.decode(errors="ignore").strip()
+            if ready_data:
+                response = ready_data.decode(errors="ignore").strip()
+
 
             if port in [80,8080,8000]:
-                return response.split("\r\n\r\n")[0].split("\r\n")[0]
+                banner = response.split("\r\n")[0]
             else:
-                banner = response if response else None
-        except Exception:
+                banner = response.split("\n")[0].strip()
+        except Exception (sc.timeout, OSError):
             banner = None
 
         return {
@@ -67,16 +72,15 @@ def check_and_grab(ip, port):
         sock.close()
 
 
-def scan_ports(ip, ports, threads=50):
+def scan_ports(ip, ports, threads=30):
     
     results = []
 
     with ThreadPoolExecutor(max_workers=threads) as executor:
 
         scan_results = executor.map(
-            lambda port: check_and_grab(ip, port),
-            ports
-        )
+            lambda port: check_and_grab(ip, port), ports
+            )
 
         for result in scan_results:
             results.append(result)
