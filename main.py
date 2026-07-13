@@ -1,4 +1,5 @@
 from tools.scanners.port_scanner import scan_ports
+from tools.scanners.subdomain_scanner import scan_subdomains
 import os
 import colorama
 
@@ -55,6 +56,32 @@ def port_scanner_menu():
 
 
 
+def subdomain_scanner_menu():
+
+    domain = input("\nEnter Target Domain: ").strip()
+
+    default_wordlist = [
+        "www", "mail", "ftp", "admin", "blog", "dev", "test", "secure", 
+        "webmail", "shop", "cpanel", "ns1", "ns2", "api", "staging", 
+        "server", "vpn", "cloud", "support", "autodiscover"
+    ]
+
+    print(colorama.Fore.YELLOW + f"\n[*] Starting subdomain brute-force on: {domain}")
+    print(colorama.Fore.YELLOW + f"[*] Testing {len(default_wordlist)} common subdomains using 40 threads...")
+    print(colorama.Fore.CYAN + "=" * 50)
+    print(colorama.Fore.CYAN + f"{'SUBDOMAIN':<30}{'STATUS':<10}{'CODE'}")
+    print(colorama.Fore.CYAN + "=" * 50)
+
+    results = scan_subdomains(domain, default_wordlist)
+
+    for res in results:
+        print(colorama.Fore.GREEN + f"{res['subdomain']:<30}{res['status']:<10}{res['status_code']}")
+
+    print(colorama.Fore.CYAN + "=" * 50)
+    print(colorama.Fore.LIGHTBLUE_EX + f"[i] Scan Finished. Found {len(results)} active subdomain") 
+
+
+
 def pause():
     input("\nPress Enter to continue...")
 
@@ -63,8 +90,8 @@ def clear():
 
 def menu():
     while True:
+        clear()
         print(colorama.Fore.CYAN + Banner)
-
         print("""
 [1] Port Scanner
 [2] Subdomain Scanner
@@ -78,7 +105,7 @@ def menu():
             port_scanner_menu()
             pause()
         elif choice == "2":
-            print(colorama.Fore.RED + "coming soon...")
+            subdomain_scanner_menu()
             pause()
         elif choice == "3":
             print(colorama.Fore.RED + "coming soon...")
