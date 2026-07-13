@@ -77,5 +77,3 @@ If you notice bugs, have ideas for new features, or see better ways to implement
 
 Every suggestion helps me improve both this project and my skills as a developer.
 
-```
-```
