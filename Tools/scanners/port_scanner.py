@@ -3,87 +3,68 @@ from concurrent.futures import ThreadPoolExecutor
 
 
 
-def scan_port(ip, port):
-    try:
-        sock = sc.socket(sc.AF_INET, sc.SOCK_STREAM)
-        sock.settimeout(1)
 
-        result = sock.connect_ex((ip, port))
-
-        sock.close()
-
-        return result == 0
-    except Exception:
-        return False
 
 def get_service(port):
     try:
         return sc.getservbyport(port)
-    except:
+    except Exception:
         return "Unknown"
     
-def grab_banner(ip, port):
+def check_and_grab(ip, port):
+    
+    sock = sc.socket(sc.AF_INET, sc.SOCK_STREAM)
+    sock.settimeout(2)
+
     try:
-        sock = sc.socket(sc.AF_INET, sc.SOCK_STREAM)
-        sock.settimeout(2)
+        
 
         sock.connect((ip, port))
+
+        banner = None
 
         #HTTP
         if port in [80, 8080, 8000]:
             request = (
                 f"GET / HTTP/1.1\r\n"
-                f"HOST: {ip}\r\n"
-                "connection: close\r\n\r\n"
+                f"Host: {ip}\r\n"
+                "Connection: close\r\n\r\n"
             )
             sock.send(request.encode())
-
         #FTP AND SSH BANNER
         elif port in [21, 22]:
             pass
-        
         #General
         else:
             sock.send(b"\r\n")
+        try:
 
-        banner = sock.recv(4096)
+            ready_data = sock.recv(4096)
+            response = banner.decode(errors="ignore").strip()
 
-        sock.close()
+            if port in [80,8080,8000]:
+                return response.split("\r\n\r\n")[0].split("\r\n")[0]
+            else:
+                banner = response if response else None
+        except Exception:
+            banner = None
 
-        response = banner.decode(errors="ignore").strip()
-
-        if port in [80,8080,8000]:
-            return response.split("\r\n\r\n")[0]
-             
-        return response
-    
-    except Exception:
-        return None
-
-def scan_single(ip, port):
-    #To scan a single port
-
-    service = get_service(port)
-
-    banner = None
-
-    if scan_port(ip, port):
-        banner = grab_banner(ip, port)
-
-        return{
-        "port": port,
-        "status": "OPEN",
-        "service": service,
-        "banner": banner
+        return {
+            "port": port,
+            "status": "OPEN",
+            "service": get_service(port),
+            "banner": banner
         }
-
-    return{
-        "port": port,
-        "status": "CLOSED",
-        "service": service,
-        "banner": banner
-    }
-
+    
+    except (sc.timeout, ConnectionRefusedError, OSError):
+        return {
+            "port": port,
+            "status": "CLOSED",
+            "service": get_service(port),
+            "banner": None
+        }
+    finally:
+        sock.close()
 
 
 def scan_ports(ip, ports, threads=50):
@@ -93,7 +74,7 @@ def scan_ports(ip, ports, threads=50):
     with ThreadPoolExecutor(max_workers=threads) as executor:
 
         scan_results = executor.map(
-            lambda port: scan_single(ip, port),
+            lambda port: check_and_grab(ip, port),
             ports
         )
 
