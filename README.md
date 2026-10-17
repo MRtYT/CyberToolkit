@@ -1,79 +1,82 @@
 # CyberToolkit
 
-CyberToolkit is a personal cybersecurity project built in Python to improve my programming, networking, and cybersecurity skills through practical tool development.
+CyberToolkit is a learning-focused Python toolkit for **authorized** security
+testing and network programming practice. It is not a replacement for Nmap,
+Burp Suite, or Wireshark.
 
-The goal of this project is not to replace professional tools such as Nmap, Burp Suite, or Wireshark. Instead, it is a learning-focused toolkit where I build security tools from scratch to better understand how they work internally.
+## Features
 
-## Current Features
+| Command | Purpose |
+| --- | --- |
+| `ports` | Concurrent TCP scanning with service lookup and banner probing |
+| `subdomains` | HTTP/HTTPS subdomain discovery using a wordlist |
+| `dns` | Resolve a hostname to IPv4/IPv6 addresses |
+| `http` | Inspect status, redirects, and common security headers |
+| `hash` | Hash text or files with MD5, SHA-1, SHA-256, or SHA-512 |
+| `network-info` | Display the local hostname and address |
 
-### Port Scanner
+The original interactive menu remains available when the program is run
+without a command.
 
-* TCP port scanning
-* Service identification
-* Banner grabbing
-* Multithreaded scanning
-* Interactive CLI integration
+## Installation
 
-## Project Goals
+Python 3.10 or newer is recommended:
 
-This project is designed to help me learn and practice:
-
-* Python programming
-* Networking fundamentals
-* TCP/IP protocols
-* Socket programming
-* Multithreading
-* Cybersecurity concepts
-* Tool development and project organization
-
-## Planned Features
-
-* Subdomain Scanner
-* DNS Lookup Tool
-* WHOIS Lookup
-* Hash Generator
-* Hash Cracking Utilities
-* Network Information Tools
-* Additional cybersecurity utilities
-
-## Project Structure
-
-```text
-CyberToolkit/
-│
-├── .gitignore
-├── LICENSE
-├── README.md
-├── requirements.txt
-├── main.py
-│
-└── tools/
-    ├── __init__.py
-    └── port_scanner.py
+```bash
+python -m venv .venv
+# Windows:
+.venv\Scripts\activate
+# macOS/Linux:
+source .venv/bin/activate
+python -m pip install -r requirements.txt
 ```
 
 ## Usage
 
-Run the toolkit:
-
 ```bash
+# Interactive menu
 python main.py
+
+# Scan TCP ports
+python main.py ports example.com --start 1 --end 1024 --threads 30
+
+# Use a custom wordlist
+python main.py subdomains example.com --wordlist Wordlists/common.txt
+
+# Resolve DNS
+python main.py dns example.com
+
+# Inspect HTTP security headers
+python main.py http https://example.com
+
+# Hash data
+python main.py hash --text "hello" --algorithm sha256
+python main.py hash --file image.iso --algorithm sha256
+
+# Get local network information
+python main.py network-info
+
+# Any command can emit JSON for scripts (place --json before the command)
+python main.py --json dns example.com
 ```
 
-Select a tool from the interactive menu and follow the on-screen instructions.
+Subdomain wordlists ignore blank lines, comments beginning with `#`, and
+duplicate entries. TLS verification is enabled by default; use
+`--insecure` only for controlled testing with certificates you understand.
 
-## Disclaimer
+## Development
 
-This project is intended for educational purposes and authorized security testing only.
+Run the standard-library test suite:
 
-Always ensure you have permission before scanning or testing systems that you do not own.
+```bash
+python -m unittest discover -s tests -v
+```
 
+The scanners intentionally use conservative timeouts and bounded worker
+counts. Results distinguish open, closed, and error states where possible.
 
-## Contributing & Feedback
+## Responsible use
 
-This project is part of my cybersecurity learning journey, and I am always open to feedback, suggestions, and improvements.
-
-If you notice bugs, have ideas for new features, or see better ways to implement something, feel free to open an issue or submit a pull request. Constructive criticism and educational discussions are always welcome.
-
-Every suggestion helps me improve both this project and my skills as a developer.
-
+Only scan systems, domains, and files that you own or have explicit permission
+to test. Respect rate limits, terms of service, privacy requirements, and
+applicable laws. The authors are not responsible for unauthorized use.

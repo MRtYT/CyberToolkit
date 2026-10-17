@@ -1,88 +1,80 @@
-import socket as sc
+"""TCP port scanning with optional banner grabbing."""
+
+from __future__ import annotations
+
+import socket
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import asdict, dataclass
+from typing import Iterable
 
 
+@dataclass
+class PortResult:
+    port: int
+    status: str
+    service: str
+    banner: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
 
 
+def validate_port_range(start: int, end: int) -> None:
+    if not 1 <= start <= 65535 or not 1 <= end <= 65535:
+        raise ValueError("ports must be between 1 and 65535")
+    if start > end:
+        raise ValueError("start port must not be greater than end port")
 
-def get_service(port):
+
+def get_service(port: int) -> str:
     try:
-        return sc.getservbyport(port)
-    except Exception:
-        return "Unknown"
-    
-def check_and_grab(ip, port):
-    
-    sock = sc.socket(sc.AF_INET, sc.SOCK_STREAM)
-    sock.settimeout(2)
+        return socket.getservbyport(port, "tcp")
+    except (OSError, OverflowError):
+        return "unknown"
 
+
+def _clean_banner(data: bytes, http: bool = False) -> str | None:
+    if not data:
+        return None
+    text = data.decode("utf-8", errors="replace").strip()
+    if not text:
+        return None
+    return text.splitlines()[0][:200] if http else text.splitlines()[0][:200]
+
+
+def check_port(host: str, port: int, timeout: float = 2.0) -> PortResult:
+    service = get_service(port)
     try:
-        
-
-        sock.connect((ip, port))
-
-        sock.settimeout(3)
-        banner = None
-
-        #HTTP
-        if port in [80, 8080, 8000]:
-            request = (
-                f"GET / HTTP/1.1\r\n"
-                f"Host: {ip}\r\n"
-                "User-Agent: Mozilla/5.0 (CyberToolkit-Scanner)\r\n"
-                "Accept: */*\r\n"
-                "Connection: close\r\n\r\n"
-            )
-            sock.send(request.encode())
-        #FTP AND SSH BANNER
-        elif port in [21, 22]:
-            pass
-        #General
-        else:
-            sock.send(b"\r\n")
-        try:
-
-            ready_data = sock.recv(4096)
-            if ready_data:
-                response = ready_data.decode(errors="ignore").strip()
-
-
-            if port in [80,8080,8000]:
-                banner = response.split("\r\n")[0]
+        with socket.create_connection((host, port), timeout=timeout) as sock:
+            sock.settimeout(timeout)
+            if port in {80, 8000, 8080, 443, 8443}:
+                request = (
+                    f"HEAD / HTTP/1.1\r\nHost: {host}\r\n"
+                    "User-Agent: CyberToolkit/1.0\r\nConnection: close\r\n\r\n"
+                )
+                sock.sendall(request.encode("ascii"))
             else:
-                banner = response.split("\n")[0].strip()
-        except Exception (sc.timeout, OSError):
-            banner = None
-
-        return {
-            "port": port,
-            "status": "OPEN",
-            "service": get_service(port),
-            "banner": banner
-        }
-    
-    except (sc.timeout, ConnectionRefusedError, OSError):
-        return {
-            "port": port,
-            "status": "CLOSED",
-            "service": get_service(port),
-            "banner": None
-        }
-    finally:
-        sock.close()
+                sock.sendall(b"\r\n")
+            try:
+                banner = _clean_banner(sock.recv(4096), port in {80, 8000, 8080, 443, 8443})
+            except socket.timeout:
+                banner = None
+            return PortResult(port, "OPEN", service, banner)
+    except (ConnectionRefusedError, socket.timeout):
+        return PortResult(port, "CLOSED", service)
+    except OSError as exc:
+        return PortResult(port, "ERROR", service, error=str(exc))
 
 
-def scan_ports(ip, ports, threads=30):
-    
-    results = []
-
+def scan_ports(
+    host: str, ports: Iterable[int], threads: int = 30, timeout: float = 2.0
+) -> list[dict[str, object]]:
+    if threads < 1 or threads > 200:
+        raise ValueError("threads must be between 1 and 200")
+    port_list = list(ports)
+    if not port_list:
+        return []
     with ThreadPoolExecutor(max_workers=threads) as executor:
-
-        scan_results = executor.map(
-            lambda port: check_and_grab(ip, port), ports
-            )
-
-        for result in scan_results:
-            results.append(result)
-
-    return results
+        results = executor.map(lambda port: check_port(host, port, timeout), port_list)
+        return [result.to_dict() for result in results]

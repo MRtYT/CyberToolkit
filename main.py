@@ -1,123 +1,185 @@
-from tools.scanners.port_scanner import scan_ports
-from tools.scanners.subdomain_scanner import scan_subdomains
+"""CyberToolkit command-line interface."""
+
+from __future__ import annotations
+
+import argparse
+import json
 import os
-import colorama
+import sys
+from pathlib import Path
 
-colorama.init(autoreset=True)
+from tools.dns_lookup import lookup
+from tools.hash_tool import SUPPORTED_ALGORITHMS, hash_file, hash_text
+from tools.http_inspector import inspect_url
+from tools.network_info import get_network_info
+from tools.scanners.port_scanner import scan_ports, validate_port_range
+from tools.scanners.subdomain_scanner import scan_subdomains
 
-
-Banner = r"""
--- .·:'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''':·.
--- : :    ██████╗██╗   ██╗██████╗ ███████╗██████╗ ████████╗ ██████╗  ██████╗ ██╗     ██╗  ██╗██╗████████╗   : :
--- : :   ██╔════╝╚██╗ ██╔╝██╔══██╗██╔════╝██╔══██╗╚══██╔══╝██╔═══██╗██╔═══██╗██║     ██║ ██╔╝██║╚══██╔══╝   : :
--- : :   ██║      ╚████╔╝ ██████╔╝█████╗  ██████╔╝   ██║   ██║   ██║██║   ██║██║     █████╔╝ ██║   ██║      : :
--- : :   ██║       ╚██╔╝  ██╔══██╗██╔══╝  ██╔══██╗   ██║   ██║   ██║██║   ██║██║     ██╔═██╗ ██║   ██║      : :
--- : :   ╚██████╗   ██║   ██████╔╝███████╗██║  ██║   ██║   ╚██████╔╝╚██████╔╝███████╗██║  ██╗██║   ██║      : :
--- : :    ╚═════╝   ╚═╝   ╚═════╝ ╚══════╝╚═╝  ╚═╝   ╚═╝    ╚═════╝  ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝   ╚═╝      : :
--- '·:......................................................................................................:·'
-
-"""
-
-def port_scanner_menu():
-
-    target = input("\nTarget IP / Domain: ")
-
-    start = int(input("Start port: "))
-    end = int(input("End port: "))
-
-    ports = range(start, end + 1)
-
-    print(colorama.Fore.YELLOW + f"\n[*]Starting scan on target: {target}")
-    print(colorama.Fore.YELLOW + f"[*] Scanning {len(ports)} ports using 50 threads...\n")
-    print(colorama.Fore.CYAN + "=" * 60)
-
-    print(colorama.Fore.CYAN + f"{'PORT':<10}{'STATUS':<10}{"SERVICE":<15}{"BANNER"}")
-    print(colorama.Fore.CYAN + "=" * 60)
+DEFAULT_SUBDOMAINS = [
+    "www", "mail", "ftp", "admin", "blog", "dev", "test", "api",
+    "staging", "vpn", "support", "autodiscover",
+]
 
 
-    results = scan_ports(target, ports)
-
-    open_count = 0
-    closed_count = 0
-
-    for result in results:
-        if result["status"] == "OPEN":
-            open_count += 1
-
-            banner_text = result["banner"] if result["banner"] else "-"
-
-            print(colorama.Fore.GREEN + f"{result['port']:<10}{result['status']:<10}{result['service']:<15}{banner_text}")
-        
-        else:
-            closed_count += 1
-
-    print(colorama.Fore.CYAN + "=" * 60)
-    print(colorama.Fore.LIGHTBLUE_EX + f"[i] Scan finished. Found {open_count} open ports and {closed_count} closed ports.")
+def clear_screen() -> None:
+    """Clear the terminal before displaying a fresh interactive menu."""
+    os.system("cls" if sys.platform == "win32" else "clear")
 
 
-
-def subdomain_scanner_menu():
-
-    domain = input("\nEnter Target Domain: ").strip()
-
-    default_wordlist = [
-        "www", "mail", "ftp", "admin", "blog", "dev", "test", "secure", 
-        "webmail", "shop", "cpanel", "ns1", "ns2", "api", "staging", 
-        "server", "vpn", "cloud", "support", "autodiscover"
-    ]
-
-    print(colorama.Fore.YELLOW + f"\n[*] Starting subdomain brute-force on: {domain}")
-    print(colorama.Fore.YELLOW + f"[*] Testing {len(default_wordlist)} common subdomains using 40 threads...")
-    print(colorama.Fore.CYAN + "=" * 50)
-    print(colorama.Fore.CYAN + f"{'SUBDOMAIN':<30}{'STATUS':<10}{'CODE'}")
-    print(colorama.Fore.CYAN + "=" * 50)
-
-    results = scan_subdomains(domain, default_wordlist)
-
-    for res in results:
-        print(colorama.Fore.GREEN + f"{res['subdomain']:<30}{res['status']:<10}{res['status_code']}")
-
-    print(colorama.Fore.CYAN + "=" * 50)
-    print(colorama.Fore.LIGHTBLUE_EX + f"[i] Scan Finished. Found {len(results)} active subdomain") 
+def read_wordlist(path: str) -> list[str]:
+    try:
+        with Path(path).open(encoding="utf-8") as file:
+            return [
+                line.strip()
+                for line in file
+                if line.strip() and not line.lstrip().startswith("#")
+            ]
+    except OSError as exc:
+        raise ValueError(f"could not read wordlist: {exc}") from exc
 
 
+def print_result(result: object, as_json: bool = False) -> None:
+    if as_json:
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+    if isinstance(result, dict):
+        for key, value in result.items():
+            print(f"{key}: {value}")
+    elif isinstance(result, list):
+        for item in result:
+            print_result(item)
+    else:
+        print(result)
 
-def pause():
-    input("\nPress Enter to continue...")
 
-def clear():
-    os.system("cls" if os.name == "nt" else "clear")
+def run_ports(args: argparse.Namespace) -> list[dict[str, object]]:
+    validate_port_range(args.start, args.end)
+    return scan_ports(
+        args.target,
+        range(args.start, args.end + 1),
+        threads=args.threads,
+        timeout=args.timeout,
+    )
 
-def menu():
+
+def run_subdomains(args: argparse.Namespace) -> list[dict[str, object]]:
+    words = read_wordlist(args.wordlist) if args.wordlist else DEFAULT_SUBDOMAINS
+    return scan_subdomains(
+        args.domain,
+        words,
+        threads=args.threads,
+        timeout=args.timeout,
+        verify_tls=not args.insecure,
+    )
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="CyberToolkit: educational tools for authorized testing."
+    )
+    parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
+    subparsers = parser.add_subparsers(dest="command")
+
+    ports = subparsers.add_parser("ports", help="scan TCP ports")
+    ports.add_argument("target")
+    ports.add_argument("--start", type=int, default=1)
+    ports.add_argument("--end", type=int, default=1024)
+    ports.add_argument("--threads", type=int, default=30)
+    ports.add_argument("--timeout", type=float, default=2.0)
+    ports.set_defaults(handler=run_ports)
+
+    subdomains = subparsers.add_parser("subdomains", help="discover HTTP subdomains")
+    subdomains.add_argument("domain")
+    subdomains.add_argument("--wordlist")
+    subdomains.add_argument("--threads", type=int, default=40)
+    subdomains.add_argument("--timeout", type=float, default=3.0)
+    subdomains.add_argument("--insecure", action="store_true")
+    subdomains.set_defaults(handler=run_subdomains)
+
+    dns = subparsers.add_parser("dns", help="resolve a hostname")
+    dns.add_argument("hostname")
+    dns.set_defaults(handler=lambda args: lookup(args.hostname))
+
+    http = subparsers.add_parser("http", help="inspect HTTP security headers")
+    http.add_argument("url")
+    http.add_argument("--timeout", type=float, default=5.0)
+    http.set_defaults(handler=lambda args: inspect_url(args.url, args.timeout))
+
+    hashing = subparsers.add_parser("hash", help="hash text or a file")
+    source = hashing.add_mutually_exclusive_group(required=True)
+    source.add_argument("--text")
+    source.add_argument("--file")
+    hashing.add_argument("--algorithm", choices=sorted(SUPPORTED_ALGORITHMS), default="sha256")
+    hashing.set_defaults(
+        handler=lambda args: {
+            "algorithm": args.algorithm,
+            "digest": hash_text(args.text, args.algorithm)
+            if args.text is not None
+            else hash_file(args.file, args.algorithm),
+        }
+    )
+
+    network = subparsers.add_parser("network-info", help="show local network information")
+    network.set_defaults(handler=lambda args: get_network_info())
+    return parser
+
+
+def interactive() -> None:
     while True:
-        clear()
-        print(colorama.Fore.CYAN + Banner)
-        print("""
-[1] Port Scanner
-[2] Subdomain Scanner
-[3] Hash Tool
-[4] Exit
-""")
-        
-        choice = input(colorama.Fore.YELLOW + "cyberToolkit > ")
+        clear_screen()
+        print("\nCyberToolkit")
+        print("[1] TCP port scanner")
+        print("[2] Subdomain scanner")
+        print("[3] DNS lookup")
+        print("[4] HTTP security inspector")
+        print("[5] Hash text")
+        print("[6] Local network info")
+        print("[7] Exit")
+        choice = input("cyberToolkit > ").strip()
+        try:
+            if choice == "1":
+                target = input("Target: ").strip()
+                start = int(input("Start port [1]: ") or "1")
+                end = int(input("End port [1024]: ") or "1024")
+                print_result(run_ports(argparse.Namespace(
+                    target=target, start=start, end=end, threads=30, timeout=2.0
+                )))
+            elif choice == "2":
+                domain = input("Domain: ").strip()
+                print_result(run_subdomains(argparse.Namespace(
+                    domain=domain, wordlist=None, threads=40, timeout=3.0, insecure=False
+                )))
+            elif choice == "3":
+                print_result(lookup(input("Hostname: ")))
+            elif choice == "4":
+                print_result(inspect_url(input("URL: ")))
+            elif choice == "5":
+                print(hash_text(input("Text: ")))
+            elif choice == "6":
+                print_result(get_network_info())
+            elif choice == "7":
+                return
+            else:
+                print("Invalid option.")
+        except (ValueError, RuntimeError) as exc:
+            print(f"Error: {exc}")
+        input("\nPress Enter to continue...")
 
-        if choice == "1":
-            port_scanner_menu()
-            pause()
-        elif choice == "2":
-            subdomain_scanner_menu()
-            pause()
-        elif choice == "3":
-            print(colorama.Fore.RED + "coming soon...")
-            pause()
-        elif choice == "4":
-            print(colorama.Fore.GREEN + "See you Soon!")
-            pause()
-            break
 
-        else:
-            print("invalid option")
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if not getattr(args, "command", None):
+        interactive()
+        return 0
+    try:
+        result = args.handler(args)
+        print_result(result, args.json if hasattr(args, "json") else False)
+        return 0
+    except (ValueError, RuntimeError) as exc:
+        parser.error(str(exc))
+        return 2
 
 
 if __name__ == "__main__":
-    menu()
+    sys.exit(main())
